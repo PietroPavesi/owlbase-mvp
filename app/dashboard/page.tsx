@@ -411,7 +411,11 @@ if (showProfileForm) {
             Your expertise is valuable. Let's capture it, understand it, and transform it into lasting knowledge assets for your organization.
           </p>
           
-          <button className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-10 py-5 rounded-2xl font-semibold hover:from-amber-600 hover:to-orange-600 transition-all duration-200 text-xl shadow-lg hover:shadow-xl hover:-translate-y-1">
+          // Replace the button onClick:
+          <button 
+            onClick={() => window.location.href = '/session'}
+            className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-10 py-5 rounded-2xl font-semibold hover:from-amber-600 hover:to-orange-600 transition-all duration-200 text-xl shadow-lg hover:shadow-xl hover:-translate-y-1"
+          >
             🦉 Start New Session with Owly
           </button>
         </div>
