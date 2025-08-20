@@ -9,13 +9,38 @@ type Message = {
   timestamp: Date
 }
 
-export default function ChatPage() {
+type DiscoveryData = {
+  topic: string
+  category: string
+  frequency: string
+  people_involved: string
+  duration: string
+  complexity: number
+  business_impact: number
+  learning_curve: string
+  goals: string[]
+  urgency: string
+}
+
+export default function SessionPage() {
   const [expert, setExpert] = useState<any>(null)
   const [messages, setMessages] = useState<Message[]>([])
   const [input, setInput] = useState('')
   const [loading, setLoading] = useState(false)
   const [sessionId, setSessionId] = useState<string | null>(null)
-  const [interviewPhase, setInterviewPhase] = useState<'discovery' | 'ai_interview'>('discovery')
+  const [sessionPhase, setSessionPhase] = useState<'discovery' | 'ai_interview'>('discovery')
+  const [discoveryData, setDiscoveryData] = useState<DiscoveryData>({
+    topic: '',
+    category: '',
+    frequency: '',
+    people_involved: '',
+    duration: '',
+    complexity: 3,
+    business_impact: 3,
+    learning_curve: '',
+    goals: [],
+    urgency: ''
+  })
   const messagesEndRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -31,14 +56,12 @@ export default function ChatPage() {
   }
 
   const initializeExpertAndSession = async () => {
-    // Get expert from localStorage
     const storedEmail = localStorage.getItem('owlbase_expert_email')
     if (!storedEmail) {
       window.location.href = '/dashboard'
       return
     }
 
-    // Fetch expert data
     const { data: expertData } = await supabase
       .from('experts')
       .select('*')
@@ -66,147 +89,68 @@ export default function ChatPage() {
 
     if (session && !error) {
       setSessionId(session.id)
-      
-      // Start with Owly's structured greeting and first question
-      const greeting: Message = {
-        role: 'assistant',
-        content: `Hello ${expertData.preferred_name || expertData.name}! 👋 I'm Owly, your AI companion for knowledge extraction.
-
-I'm here to help capture your valuable expertise and transform it into useful documentation for your organization. Over the next 30 minutes, I'll ask you some targeted questions to understand a specific process or area of knowledge you'd like to document.
-
-Let's start with the basics:
-
-**What specific process, skill, or area of knowledge would you like to focus on today?**
-
-This could be:
-- A work process you handle regularly (like onboarding new clients, handling customer complaints, or managing projects)
-- A specialized skill you've developed (like troubleshooting equipment, negotiating contracts, or training new employees)  
-- A decision-making framework you use (like evaluating vendors, prioritizing tasks, or handling exceptions)
-
-Please describe what you'd like to focus on, and why it would be valuable to document.`,
-        timestamp: new Date()
-      }
-      
-      setMessages([greeting])
     }
   }
 
-  // Discovery phase structured questions
-  const getNextStructuredQuestion = (conversationContext: Message[], expert: any) => {
-    const messageCount = conversationContext.filter(m => m.role === 'user').length
-
-    const discoveryQuestions = [
-      {
-        condition: (count: number) => count === 1,
-        question: `Perfect! Now let me understand the scope and context.
-
-**Tell me about this process:**
-- Who are the key people involved?
-- How often does this happen? (Daily, weekly, monthly, etc.)
-- What triggers this process to start?
-- What are the main goals or outcomes?`
-      },
-      
-      {
-        condition: (count: number) => count === 2,
-        question: `Great context! Now for the practical details.
-
-**About the actual work:**
-- What are the main steps or phases?
-- What tools, systems, or resources are involved?
-- Where do challenges typically occur?
-- What skills or knowledge are most critical?`
-      },
-
-      {
-        condition: (count: number) => count === 3,
-        question: `Excellent! One more set of questions to complete the picture.
-
-**About the expertise and decisions:**
-- What key decisions need to be made during this process?
-- What common mistakes do people make when learning this?
-- What "unwritten rules" or insider knowledge is important?
-- How do you know when it's been done well?
-
-After this, I'll hand you over to my AI interview system for a deeper conversation about your expertise!`
-      },
-
-      {
-        condition: (count: number) => count >= 4,
-        question: null // This triggers the transition to AI interview
-      }
-    ]
-
-    const appropriateQuestion = discoveryQuestions.find(q => q.condition(messageCount))
-    return appropriateQuestion?.question || null
+  const handleDiscoveryChange = (field: string, value: any) => {
+    setDiscoveryData(prev => ({
+      ...prev,
+      [field]: value
+    }))
   }
 
-  // Transition to AI interview phase
-  const startAIInterview = async (discoveryContext: Message[]) => {
-    setInterviewPhase('ai_interview')
-    
-    const transitionMessage: Message = {
-      role: 'assistant',
-      content: `Perfect! I now have a good understanding of what we're working with. 
+  const handleGoalToggle = (goal: string) => {
+    setDiscoveryData(prev => ({
+      ...prev,
+      goals: prev.goals.includes(goal) 
+        ? prev.goals.filter(g => g !== goal)
+        : [...prev.goals, goal]
+    }))
+  }
 
-🔄 **Transitioning to AI Interview Mode**
+  const startAIInterview = async () => {
+    setLoading(true)
 
-I'm now going to hand you over to my advanced AI interview system. This AI has been trained specifically for knowledge extraction and will ask you much deeper, more nuanced questions based on everything you've just told me.
+    try {
+      const response = await fetch('/api/start-ai-interview', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          discoveryData: discoveryData,
+          expert: expert
+        }),
+      })
 
-The AI will help uncover the tacit knowledge, edge cases, decision-making frameworks, and expertise that makes you successful at this process.
-
-Ready? Let's dive deep! 🧠`,
-      timestamp: new Date()
-    }
-    
-    setMessages(prev => [...prev, transitionMessage])
-    
-    // Brief pause, then start AI interview
-    setTimeout(async () => {
-      try {
-        const response = await fetch('/api/start-ai-interview', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            discoveryContext: discoveryContext,
-            expert: expert
-          }),
-        })
-
-        if (response.ok) {
-          const data = await response.json()
-          
-          const aiStartMessage: Message = {
-            role: 'assistant',
-            content: data.content,
-            timestamp: new Date()
-          }
-          
-          setMessages(prev => [...prev, aiStartMessage])
-
-          // Save updated conversation to database
-          if (sessionId) {
-            await supabase
-              .from('sessions')
-              .update({
-                conversation_data: [...discoveryContext, transitionMessage, aiStartMessage],
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', sessionId)
-          }
-        }
-      } catch (error) {
-        console.error('Error starting AI interview:', error)
-        const errorMessage: Message = {
+      if (response.ok) {
+        const data = await response.json()
+        
+        const aiStartMessage: Message = {
           role: 'assistant',
-          content: "I apologize, but I'm having trouble starting the AI interview. Please try refreshing the page.",
+          content: data.content,
           timestamp: new Date()
         }
-        setMessages(prev => [...prev, errorMessage])
+        
+        setMessages([aiStartMessage])
+        setSessionPhase('ai_interview')
+
+        // Save to database
+        if (sessionId) {
+          await supabase
+            .from('sessions')
+            .update({
+              conversation_data: [aiStartMessage],
+              updated_at: new Date().toISOString()
+            })
+            .eq('id', sessionId)
+        }
       }
-    }, 2000)
+    } catch (error) {
+      console.error('Error starting AI interview:', error)
+    } finally {
+      setLoading(false)
+    }
   }
 
   const sendMessage = async () => {
@@ -224,73 +168,42 @@ Ready? Let's dive deep! 🧠`,
     setLoading(true)
 
     try {
-      let assistantMessage: Message
+      const response = await fetch('/api/chat', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          messages: updatedMessages,
+          expert: expert,
+          discoveryData: discoveryData,
+          phase: 'ai_interview'
+        }),
+      })
 
-      if (interviewPhase === 'discovery') {
-        // Discovery phase - use structured questions
-        const structuredQuestion = getNextStructuredQuestion(updatedMessages, expert)
-        
-        if (structuredQuestion) {
-          assistantMessage = {
-            role: 'assistant',
-            content: structuredQuestion,
-            timestamp: new Date()
-          }
-          setMessages(prev => [...prev, assistantMessage])
+      if (!response.ok) {
+        throw new Error('Failed to get response from Owly')
+      }
 
-          // Save conversation to database
-          if (sessionId) {
-            await supabase
-              .from('sessions')
-              .update({
-                conversation_data: [...updatedMessages, assistantMessage],
-                updated_at: new Date().toISOString()
-              })
-              .eq('id', sessionId)
-          }
-        } else {
-          // Discovery complete - transition to AI interview
-          await startAIInterview(updatedMessages)
-          setLoading(false)
-          return
-        }
-      } else {
-        // AI interview phase - send to Claude API
-        const response = await fetch('/api/chat', {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            messages: updatedMessages,
-            expert: expert,
-            phase: 'ai_interview'
-          }),
-        })
+      const data = await response.json()
+      
+      const assistantMessage: Message = {
+        role: 'assistant',
+        content: data.content,
+        timestamp: new Date()
+      }
+      
+      setMessages(prev => [...prev, assistantMessage])
 
-        if (!response.ok) {
-          throw new Error('Failed to get response from Owly')
-        }
-
-        const data = await response.json()
-        
-        assistantMessage = {
-          role: 'assistant',
-          content: data.content,
-          timestamp: new Date()
-        }
-        setMessages(prev => [...prev, assistantMessage])
-
-        // Save conversation to database
-        if (sessionId) {
-          await supabase
-            .from('sessions')
-            .update({
-              conversation_data: [...updatedMessages, assistantMessage],
-              updated_at: new Date().toISOString()
-            })
-            .eq('id', sessionId)
-        }
+      // Save conversation to database
+      if (sessionId) {
+        await supabase
+          .from('sessions')
+          .update({
+            conversation_data: [...updatedMessages, assistantMessage],
+            updated_at: new Date().toISOString()
+          })
+          .eq('id', sessionId)
       }
 
     } catch (error) {
@@ -323,48 +236,285 @@ Ready? Let's dive deep! 🧠`,
     window.location.href = '/dashboard'
   }
 
+  const isDiscoveryComplete = () => {
+    return discoveryData.topic && 
+           discoveryData.category && 
+           discoveryData.frequency && 
+           discoveryData.people_involved && 
+           discoveryData.duration && 
+           discoveryData.learning_curve && 
+           discoveryData.goals.length > 0 && 
+           discoveryData.urgency
+  }
+
   if (!expert) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-amber-50 via-white to-green-50 flex items-center justify-center">
-        <div className="text-center">
-          <div className="w-20 h-20 bg-gradient-to-br from-amber-500 to-orange-500 rounded-2xl flex items-center justify-center mb-6 mx-auto shadow-lg">
-            <span className="text-3xl">🦉</span>
+      <div className="min-h-screen bg-gray-50 flex items-center justify-center">
+        <div className="flex items-center gap-3">
+          <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
+            <span className="text-white text-sm">🦉</span>
           </div>
-          <div className="w-12 h-1 bg-amber-500 rounded-full mx-auto animate-pulse"></div>
+          <div className="w-8 h-1 bg-amber-500 rounded-full animate-pulse"></div>
         </div>
       </div>
     )
   }
 
-  return (
-    <div className="min-h-screen bg-stone-50 flex flex-col">
-      {/* Header */}
-      <div className="bg-white border-b border-stone-200 shadow-sm">
-        <div className="max-w-4xl mx-auto px-6 py-4">
-          <div className="flex justify-between items-center">
-            <div className="flex items-center gap-4">
-              <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-500 rounded-xl flex items-center justify-center shadow-md">
-                <span className="text-lg">🦉</span>
-              </div>
-              <div>
-                <h1 className="text-xl font-bold text-slate-900">
-                  {interviewPhase === 'discovery' ? 'Discovery Session' : 'AI Knowledge Interview'} with Owly
-                </h1>
-                <p className="text-sm text-stone-600">
-                  {interviewPhase === 'discovery' 
-                    ? `Understanding your expertise • ${expert.name}` 
-                    : `Deep knowledge extraction • ${expert.name}`
-                  }
-                </p>
-              </div>
-            </div>
-            <div className="flex items-center gap-4">
-              <div className="text-xs text-stone-500 bg-stone-100 px-3 py-1 rounded-full">
-                {interviewPhase === 'discovery' ? 'Phase 1: Discovery' : 'Phase 2: AI Interview'}
+  // Discovery Form Phase
+  if (sessionPhase === 'discovery') {
+    return (
+      <div className="min-h-screen bg-gray-50">
+        {/* Header */}
+        <div className="bg-white border-b border-gray-200">
+          <div className="max-w-4xl mx-auto px-6 py-4">
+            <div className="flex justify-between items-center">
+              <div className="flex items-center gap-3">
+                <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
+                  <span className="text-white text-sm">🦉</span>
+                </div>
+                <div>
+                  <h1 className="text-lg font-semibold text-gray-900">Knowledge Discovery</h1>
+                  <p className="text-sm text-gray-600">Setting up your expertise session • {expert.name}</p>
+                </div>
               </div>
               <button 
                 onClick={endSession}
-                className="text-sm text-stone-500 hover:text-slate-700 px-4 py-2 rounded-xl hover:bg-stone-100 transition-all duration-200 font-medium"
+                className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1 rounded-md hover:bg-gray-100 transition-colors"
+              >
+                Cancel
+              </button>
+            </div>
+          </div>
+        </div>
+
+        {/* Form Content */}
+        <div className="max-w-2xl mx-auto p-6">
+          <div className="bg-white rounded-xl border border-gray-200 p-6">
+            <div className="mb-6">
+              <h2 className="text-xl font-semibold text-gray-900 mb-2">Let's understand your expertise</h2>
+              <p className="text-gray-600">Please fill out this quick form so Owly can have a more focused conversation with you.</p>
+            </div>
+
+            <div className="space-y-6">
+              {/* Question 1: Topic & Scope */}
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-3">
+                  1. What specific process or expertise area do you want to focus on? *
+                </label>
+                <input
+                  type="text"
+                  value={discoveryData.topic}
+                  onChange={(e) => handleDiscoveryChange('topic', e.target.value)}
+                  className="w-full p-3 border border-gray-300 rounded-lg focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-colors text-gray-900 bg-white"
+                  placeholder="e.g., Customer onboarding process, Sales negotiation techniques, Equipment troubleshooting..."
+                />
+                <div className="mt-3">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                  <select
+                    value={discoveryData.category}
+                    onChange={(e) => handleDiscoveryChange('category', e.target.value)}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-colors text-gray-900 bg-white"
+                  >
+                    <option value="">Select category...</option>
+                    <option value="Operations">Operations</option>
+                    <option value="Sales">Sales</option>
+                    <option value="Technical">Technical</option>
+                    <option value="Customer Service">Customer Service</option>
+                    <option value="Management">Management</option>
+                    <option value="Finance">Finance</option>
+                    <option value="HR">Human Resources</option>
+                    <option value="Other">Other</option>
+                  </select>
+                </div>
+              </div>
+
+              {/* Question 2: Process Frequency & Scale */}
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-3">
+                  2. How often does this process happen, and how many people are typically involved? *
+                </label>
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Frequency</label>
+                    <select
+                      value={discoveryData.frequency}
+                      onChange={(e) => handleDiscoveryChange('frequency', e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-colors text-gray-900 bg-white"
+                    >
+                      <option value="">Select...</option>
+                      <option value="Daily">Daily</option>
+                      <option value="Weekly">Weekly</option>
+                      <option value="Monthly">Monthly</option>
+                      <option value="Quarterly">Quarterly</option>
+                      <option value="As-needed">As-needed</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">People Involved</label>
+                    <select
+                      value={discoveryData.people_involved}
+                      onChange={(e) => handleDiscoveryChange('people_involved', e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-colors text-gray-900 bg-white"
+                    >
+                      <option value="">Select...</option>
+                      <option value="1-3">1-3 people</option>
+                      <option value="4-10">4-10 people</option>
+                      <option value="11-25">11-25 people</option>
+                      <option value="25+">25+ people</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Duration per Instance</label>
+                    <select
+                      value={discoveryData.duration}
+                      onChange={(e) => handleDiscoveryChange('duration', e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-colors text-gray-900 bg-white"
+                    >
+                      <option value="">Select...</option>
+                      <option value="Minutes">Minutes</option>
+                      <option value="Hours">Hours</option>
+                      <option value="Days">Days</option>
+                      <option value="Weeks">Weeks</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Question 3: Complexity & Impact */}
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-3">
+                  3. How would you rate this process? *
+                </label>
+                <div className="space-y-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Complexity: {discoveryData.complexity}/5
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-500">Simple</span>
+                      <input
+                        type="range"
+                        min="1"
+                        max="5"
+                        value={discoveryData.complexity}
+                        onChange={(e) => handleDiscoveryChange('complexity', parseInt(e.target.value))}
+                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-sm text-gray-500">Highly specialized</span>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Business Impact: {discoveryData.business_impact}/5
+                    </label>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm text-gray-500">Low impact</span>
+                      <input
+                        type="range"
+                        min="1"
+                        max="5"
+                        value={discoveryData.business_impact}
+                        onChange={(e) => handleDiscoveryChange('business_impact', parseInt(e.target.value))}
+                        className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      />
+                      <span className="text-sm text-gray-500">Mission critical</span>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">Learning Curve</label>
+                    <select
+                      value={discoveryData.learning_curve}
+                      onChange={(e) => handleDiscoveryChange('learning_curve', e.target.value)}
+                      className="w-full p-3 border border-gray-300 rounded-lg focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-colors text-gray-900 bg-white"
+                    >
+                      <option value="">How long to master...</option>
+                      <option value="Days">Days</option>
+                      <option value="Weeks">Weeks</option>
+                      <option value="Months">Months</option>
+                      <option value="Years">Years</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+
+              {/* Question 4: Knowledge Sharing Goal */}
+              <div>
+                <label className="block text-sm font-medium text-gray-900 mb-3">
+                  4. What's your primary goal for documenting this knowledge? *
+                </label>
+                <div className="space-y-3">
+                  {['Team training', 'Process standardization', 'AI system training', 'Knowledge preservation', 'Onboarding materials'].map((goal) => (
+                    <label key={goal} className="flex items-center gap-3 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={discoveryData.goals.includes(goal)}
+                        onChange={() => handleGoalToggle(goal)}
+                        className="w-4 h-4 text-amber-600 bg-gray-100 border-gray-300 rounded focus:ring-amber-500"
+                      />
+                      <span className="text-gray-700">{goal}</span>
+                    </label>
+                  ))}
+                </div>
+                
+                <div className="mt-4">
+                  <label className="block text-sm font-medium text-gray-700 mb-2">Urgency</label>
+                  <select
+                    value={discoveryData.urgency}
+                    onChange={(e) => handleDiscoveryChange('urgency', e.target.value)}
+                    className="w-full p-3 border border-gray-300 rounded-lg focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-colors text-gray-900 bg-white"
+                  >
+                    <option value="">Select priority...</option>
+                    <option value="Low">Low priority</option>
+                    <option value="Medium">Medium priority</option>
+                    <option value="High">High priority</option>
+                  </select>
+                </div>
+              </div>
+            </div>
+
+            <div className="mt-8 pt-6 border-t border-gray-200">
+              <button
+                onClick={startAIInterview}
+                disabled={!isDiscoveryComplete() || loading}
+                className="w-full bg-amber-500 text-white py-3 px-4 rounded-lg font-medium hover:bg-amber-600 disabled:opacity-50 disabled:cursor-not-allowed transition-colors"
+              >
+                {loading ? 'Starting AI Interview...' : 'Start AI Interview with Owly'}
+              </button>
+              {!isDiscoveryComplete() && (
+                <p className="text-sm text-gray-500 mt-2 text-center">Please complete all required fields</p>
+              )}
+            </div>
+          </div>
+        </div>
+      </div>
+    )
+  }
+
+  // AI Interview Phase (Chat Interface)
+  return (
+    <div className="min-h-screen bg-gray-50 flex flex-col">
+      {/* Header */}
+      <div className="bg-white border-b border-gray-200">
+        <div className="max-w-4xl mx-auto px-6 py-4">
+          <div className="flex justify-between items-center">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-amber-500 rounded-lg flex items-center justify-center">
+                <span className="text-white text-sm">🦉</span>
+              </div>
+              <div>
+                <h1 className="text-lg font-semibold text-gray-900">AI Knowledge Interview</h1>
+                <p className="text-sm text-gray-600">Deep expertise extraction • {expert.name}</p>
+              </div>
+            </div>
+            <div className="flex items-center gap-4">
+              <div className="text-xs text-gray-500 bg-gray-100 px-3 py-1 rounded-full">
+                AI Interview
+              </div>
+              <button 
+                onClick={endSession}
+                className="text-sm text-gray-500 hover:text-gray-700 px-3 py-1 rounded-md hover:bg-gray-100 transition-colors"
               >
                 End Session
               </button>
@@ -375,30 +525,30 @@ Ready? Let's dive deep! 🧠`,
 
       {/* Chat Messages */}
       <div className="flex-1 max-w-4xl mx-auto w-full px-6 py-6">
-        <div className="space-y-6">
+        <div className="space-y-4">
           {messages.map((message, index) => (
-            <div key={index} className={`flex gap-4 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+            <div key={index} className={`flex gap-3 ${message.role === 'user' ? 'justify-end' : 'justify-start'}`}>
               {message.role === 'assistant' && (
-                <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
-                  <span className="text-white text-sm">🦉</span>
+                <div className="w-8 h-8 bg-amber-500 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-xs">🦉</span>
                 </div>
               )}
               
-              <div className={`max-w-3xl ${message.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white border border-stone-200'} rounded-2xl p-4 shadow-sm`}>
+              <div className={`max-w-2xl ${message.role === 'user' ? 'bg-blue-600 text-white' : 'bg-white border border-gray-200'} rounded-lg p-4`}>
                 <div className={`${message.role === 'user' ? 'text-blue-100' : 'text-amber-600'} text-xs font-medium mb-2`}>
                   {message.role === 'assistant' ? 'Owly' : expert.name}
                 </div>
-                <div className={`${message.role === 'user' ? 'text-white' : 'text-slate-900'} whitespace-pre-wrap leading-relaxed`}>
+                <div className={`${message.role === 'user' ? 'text-white' : 'text-gray-900'} whitespace-pre-wrap`}>
                   {message.content}
                 </div>
-                <div className={`${message.role === 'user' ? 'text-blue-200' : 'text-stone-400'} text-xs mt-2`}>
+                <div className={`${message.role === 'user' ? 'text-blue-200' : 'text-gray-400'} text-xs mt-2`}>
                   {message.timestamp.toLocaleTimeString()}
                 </div>
               </div>
 
               {message.role === 'user' && (
-                <div className="w-10 h-10 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
-                  <span className="text-white text-sm font-bold">
+                <div className="w-8 h-8 bg-blue-600 rounded-full flex items-center justify-center flex-shrink-0">
+                  <span className="text-white text-xs font-bold">
                     {expert.name.charAt(0).toUpperCase()}
                   </span>
                 </div>
@@ -407,21 +557,19 @@ Ready? Let's dive deep! 🧠`,
           ))}
           
           {loading && (
-            <div className="flex gap-4 justify-start">
-              <div className="w-10 h-10 bg-gradient-to-br from-amber-500 to-orange-500 rounded-full flex items-center justify-center flex-shrink-0">
-                <span className="text-white text-sm">🦉</span>
+            <div className="flex gap-3 justify-start">
+              <div className="w-8 h-8 bg-amber-500 rounded-full flex items-center justify-center flex-shrink-0">
+                <span className="text-white text-xs">🦉</span>
               </div>
-              <div className="bg-white border border-stone-200 rounded-2xl p-4 shadow-sm">
+              <div className="bg-white border border-gray-200 rounded-lg p-4">
                 <div className="text-amber-600 text-xs font-medium mb-2">Owly</div>
-                <div className="flex items-center gap-2 text-stone-500">
+                <div className="flex items-center gap-2 text-gray-500">
                   <div className="flex gap-1">
                     <div className="w-2 h-2 bg-amber-500 rounded-full animate-bounce"></div>
                     <div className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{animationDelay: '0.1s'}}></div>
                     <div className="w-2 h-2 bg-amber-500 rounded-full animate-bounce" style={{animationDelay: '0.2s'}}></div>
                   </div>
-                  <span className="text-sm">
-                    {interviewPhase === 'discovery' ? 'Owly is preparing...' : 'AI is thinking deeply...'}
-                  </span>
+                  <span className="text-sm">AI is thinking deeply...</span>
                 </div>
               </div>
             </div>
@@ -432,20 +580,16 @@ Ready? Let's dive deep! 🧠`,
       </div>
 
       {/* Input Area */}
-      <div className="bg-white border-t border-stone-200 p-6">
+      <div className="bg-white border-t border-gray-200 p-6">
         <div className="max-w-4xl mx-auto">
-          <div className="flex gap-4 items-end">
+          <div className="flex gap-3 items-end">
             <div className="flex-1">
               <textarea
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyPress={handleKeyPress}
-                placeholder={
-                  interviewPhase === 'discovery' 
-                    ? "Share details about your process or expertise..." 
-                    : "Continue the conversation with Owly's AI..."
-                }
-                className="w-full p-4 border-2 border-stone-300 rounded-2xl focus:border-amber-500 focus:ring-2 focus:ring-amber-500/20 transition-all duration-200 text-slate-900 placeholder-stone-400 resize-none"
+                placeholder="Continue the conversation with Owly..."
+                className="w-full p-3 border border-gray-300 rounded-lg focus:border-amber-500 focus:ring-1 focus:ring-amber-500 transition-colors resize-none text-gray-900 bg-white"
                 rows={3}
                 disabled={loading}
               />
@@ -453,7 +597,7 @@ Ready? Let's dive deep! 🧠`,
             <button
               onClick={sendMessage}
               disabled={loading || !input.trim()}
-              className="bg-gradient-to-r from-amber-500 to-orange-500 text-white px-6 py-4 rounded-2xl font-semibold hover:from-amber-600 hover:to-orange-600 disabled:opacity-50 transition-all duration-200 shadow-lg hover:shadow-xl hover:-translate-y-1 flex-shrink-0"
+              className="bg-amber-500 text-white px-4 py-3 rounded-lg font-medium hover:bg-amber-600 disabled:opacity-50 transition-colors"
             >
               Send
             </button>

@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages, expert, phase } = await request.json()
+    const { messages, expert, discoveryData, phase } = await request.json()
 
     if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json(
@@ -11,7 +11,7 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Build context for Claude based on expert profile and conversation
+    // Build context for Claude based on expert profile and discovery data
     const expertContext = `
 EXPERT PROFILE:
 - Name: ${expert.name} (${expert.preferred_name || expert.name})
@@ -21,21 +21,28 @@ EXPERT PROFILE:
 - Previous Roles: ${expert.previous_roles || 'Not specified'}
 `
 
-    // Get the conversation history (user messages only for context)
-    const conversationHistory = messages
-      .filter((m: any) => m.role === 'user')
-      .map((m: any) => m.content)
-      .join('\n\n')
+    const discoveryContext = `
+DISCOVERY DATA:
+- Topic: ${discoveryData.topic}
+- Category: ${discoveryData.category}
+- Frequency: ${discoveryData.frequency}
+- People Involved: ${discoveryData.people_involved}
+- Duration: ${discoveryData.duration}
+- Complexity: ${discoveryData.complexity}/5
+- Business Impact: ${discoveryData.business_impact}/5
+- Learning Curve: ${discoveryData.learning_curve}
+- Goals: ${discoveryData.goals.join(', ')}
+- Urgency: ${discoveryData.urgency}
+`
 
-    const systemPrompt = `You are Owly, an expert AI interviewer specialized in knowledge extraction for business documentation. You are in the AI interview phase after completing discovery.
+    const systemPrompt = `You are Owly, an expert AI interviewer specialized in knowledge extraction for business documentation. You are conducting a deep knowledge extraction interview.
 
-CONTEXT FROM DISCOVERY PHASE:
-${conversationHistory}
+${discoveryContext}
 
 ${expertContext}
 
 YOUR ROLE:
-You are conducting a deep knowledge extraction interview. Your goal is to uncover tacit knowledge, decision-making frameworks, edge cases, and practical wisdom that would be valuable for business documentation.
+Continue the knowledge extraction interview about "${discoveryData.topic}". Your goal is to uncover tacit knowledge, decision-making frameworks, edge cases, and practical wisdom that would be valuable for business documentation.
 
 INTERVIEW APPROACH:
 1. Ask follow-up questions that dig into the "why" and "how" behind their answers
@@ -53,18 +60,18 @@ CONVERSATION STYLE:
 - Use their name occasionally to maintain personal connection
 - Keep questions clear and specific
 
-AREAS TO EXPLORE:
-- Decision points and criteria
+AREAS TO EXPLORE BASED ON DISCOVERY:
+- Decision points and criteria in their ${discoveryData.frequency} process
 - Common mistakes and how to avoid them
 - Variations in approach for different situations
 - Warning signs and red flags
 - Success indicators and quality measures
-- Relationships with other processes or stakeholders
-- Tools, systems, and resources
-- Time management and prioritization
+- Relationships with the ${discoveryData.people_involved} people involved
+- Tools, systems, and resources used
+- Time management given ${discoveryData.duration} duration
 - Communication and coordination aspects
 
-Remember: You're extracting knowledge that will become training materials, process documentation, and decision trees. Focus on actionable, practical insights that others can learn from.`
+Remember: You're extracting knowledge for ${discoveryData.goals.join(' and ')}. Focus on actionable, practical insights that others can learn from.`
 
     // Call Anthropic API
     const response = await fetch('https://api.anthropic.com/v1/messages', {

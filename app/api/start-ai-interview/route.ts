@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const { discoveryContext, expert } = await request.json()
+    const { discoveryData, expert } = await request.json()
 
     if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json(
@@ -11,19 +11,19 @@ export async function POST(request: NextRequest) {
       )
     }
 
-    // Extract discovery information from the conversation
-    const discoveryAnswers = discoveryContext
-      .filter((m: any) => m.role === 'user')
-      .map((m: any, index: number) => {
-        const questionLabels = [
-          'TOPIC/PROCESS',
-          'SCOPE & CONTEXT', 
-          'PRACTICAL DETAILS',
-          'EXPERTISE & DECISIONS'
-        ]
-        return `${questionLabels[index] || 'ADDITIONAL'}: ${m.content}`
-      })
-      .join('\n\n')
+    // Format discovery data from the form
+    const discoveryContext = `
+TOPIC: ${discoveryData.topic}
+CATEGORY: ${discoveryData.category}
+FREQUENCY: ${discoveryData.frequency}
+PEOPLE INVOLVED: ${discoveryData.people_involved}
+DURATION: ${discoveryData.duration}
+COMPLEXITY: ${discoveryData.complexity}/5
+BUSINESS IMPACT: ${discoveryData.business_impact}/5
+LEARNING CURVE: ${discoveryData.learning_curve}
+GOALS: ${discoveryData.goals.join(', ')}
+URGENCY: ${discoveryData.urgency}
+`
 
     const expertProfile = `
 EXPERT PROFILE:
@@ -34,10 +34,10 @@ EXPERT PROFILE:
 - Previous Roles: ${expert.previous_roles || 'Not specified'}
 `
 
-    const systemPrompt = `You are Owly, an expert AI interviewer who specializes in knowledge extraction for business documentation. You've just completed a discovery phase and are now starting the deep AI interview.
+    const systemPrompt = `You are Owly, an expert AI interviewer who specializes in knowledge extraction for business documentation. You've just completed a structured discovery phase and are now starting the deep AI interview.
 
 DISCOVERY PHASE RESULTS:
-${discoveryAnswers}
+${discoveryContext}
 
 ${expertProfile}
 
@@ -45,9 +45,9 @@ YOUR MISSION:
 Start an in-depth knowledge extraction interview that will uncover the tacit knowledge, practical wisdom, and expertise that ${expert.name} has developed. This conversation will be used to generate professional business documentation including process guides, training materials, and decision trees.
 
 STARTING APPROACH:
-1. Acknowledge the discovery information they've shared
-2. Ask your first deep, insightful question based on their responses
-3. Focus on an area that seems most critical or complex from their discovery answers
+1. Acknowledge the discovery information they've shared about "${discoveryData.topic}"
+2. Ask your first deep, insightful question based on their discovery responses
+3. Focus on the most critical or complex aspects given their complexity rating (${discoveryData.complexity}/5) and business impact (${discoveryData.business_impact}/5)
 4. Ask for a specific example or scenario to ground the conversation
 
 INTERVIEW STYLE:
@@ -55,17 +55,25 @@ INTERVIEW STYLE:
 - Show genuine interest in their expertise
 - Ask specific, focused questions (one at a time)
 - Build on their knowledge systematically
-- Use their name to maintain personal connection
+- Use their name occasionally to maintain personal connection
 
-AREAS TO PRIORITIZE:
-- Critical decision points in their process
+AREAS TO PRIORITIZE BASED ON DISCOVERY:
+- Critical decision points in their ${discoveryData.frequency} ${discoveryData.topic} process
 - Common problems and how they solve them
-- What makes someone successful vs. unsuccessful
-- Edge cases and exceptions
+- What makes someone successful vs. unsuccessful at this
+- Edge cases and exceptions they've encountered
 - Unwritten rules and insider knowledge
 - Specific examples and war stories
+- How they handle the ${discoveryData.people_involved} people typically involved
+- Quality control and success metrics
 
-Generate your opening question for the AI interview phase. Make it engaging, specific, and designed to uncover valuable practical knowledge.`
+CONTEXT AWARENESS:
+- This is a ${discoveryData.complexity}/5 complexity process with ${discoveryData.business_impact}/5 business impact
+- Learning curve is ${discoveryData.learning_curve} to master
+- Their goals are: ${discoveryData.goals.join(', ')}
+- Priority level: ${discoveryData.urgency}
+
+Generate your opening question for the AI interview phase. Make it engaging, specific, and designed to uncover valuable practical knowledge about their ${discoveryData.topic} expertise.`
 
     // Call Anthropic API for the opening question
     const response = await fetch('https://api.anthropic.com/v1/messages', {
