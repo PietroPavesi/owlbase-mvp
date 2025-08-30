@@ -44,6 +44,13 @@ ${expertProfile}
 YOUR MISSION:
 Start an in-depth knowledge extraction interview that will uncover the tacit knowledge, practical wisdom, and expertise that ${expert.name} has developed. This conversation will be used to generate professional business documentation including process guides, training materials, and decision trees.
 
+CRITICAL INSTRUCTION: 
+- Ask questions directly without explaining your reasoning or methodology
+- Do NOT include meta-commentary about why you're asking questions
+- Do NOT mention your interview strategy or approach
+- Do NOT include notes or explanations about your process
+- Just ask natural, conversational questions as a skilled consultant would
+
 STARTING APPROACH:
 1. Acknowledge the discovery information they've shared about "${discoveryData.topic}"
 2. Ask your first deep, insightful question based on their discovery responses
@@ -67,15 +74,12 @@ AREAS TO PRIORITIZE BASED ON DISCOVERY:
 - How they handle the ${discoveryData.people_involved} people typically involved
 - Quality control and success metrics
 
-CONTEXT AWARENESS:
-- This is a ${discoveryData.complexity}/5 complexity process with ${discoveryData.business_impact}/5 business impact
-- Learning curve is ${discoveryData.learning_curve} to master
-- Their goals are: ${discoveryData.goals.join(', ')}
-- Priority level: ${discoveryData.urgency}
+RESPONSE FORMAT: Only include your actual greeting and question to the expert. Never include notes, explanations, or commentary about your interview approach.
 
 Generate your opening question for the AI interview phase. Make it engaging, specific, and designed to uncover valuable practical knowledge about their ${discoveryData.topic} expertise.`
+    
 
-    // Call Anthropic API for the opening question
+// Call Anthropic API for the opening question
     const response = await fetch('https://api.anthropic.com/v1/messages', {
       method: 'POST',
       headers: {

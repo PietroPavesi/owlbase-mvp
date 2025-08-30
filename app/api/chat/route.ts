@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server'
 
 export async function POST(request: NextRequest) {
   try {
-    const { messages, expert, discoveryData, phase } = await request.json()
+    const { messages, expert, discoveryData, phase, shouldComplete, messageCount, timeElapsed } = await request.json()
 
     if (!process.env.ANTHROPIC_API_KEY) {
       return NextResponse.json(
@@ -35,6 +35,22 @@ DISCOVERY DATA:
 - Urgency: ${discoveryData.urgency}
 `
 
+    const completionContext = shouldComplete ? `
+
+IMPORTANT SESSION MANAGEMENT:
+- We are ${timeElapsed.toFixed(1)} minutes into the session (limit: 20 minutes)
+- This is message ${messageCount}/20 (limit: 20 exchanges)
+- YOU SHOULD CONCLUDE THIS SESSION NOW
+
+CONCLUSION INSTRUCTIONS:
+1. Acknowledge the valuable information shared
+2. Summarize 2-3 key insights you've gathered
+3. Thank them for their expertise
+4. Mention that you'll now generate professional documentation based on the conversation
+5. End with something like "I'll now process our conversation to create your knowledge documents. Thank you for sharing your valuable expertise!"
+
+Keep your response concise and conclusive.` : ''
+
     const systemPrompt = `You are Owly, an expert AI interviewer specialized in knowledge extraction for business documentation. You are conducting a deep knowledge extraction interview.
 
 ${discoveryContext}
@@ -43,6 +59,12 @@ ${expertContext}
 
 YOUR ROLE:
 Continue the knowledge extraction interview about "${discoveryData.topic}". Your goal is to uncover tacit knowledge, decision-making frameworks, edge cases, and practical wisdom that would be valuable for business documentation.
+
+CRITICAL INSTRUCTION: 
+- Ask questions directly without explaining your reasoning or methodology
+- Do NOT include meta-commentary about why you're asking questions
+- Do NOT mention your interview strategy or approach
+- Just ask natural, conversational questions as a skilled consultant would
 
 INTERVIEW APPROACH:
 1. Ask follow-up questions that dig into the "why" and "how" behind their answers
@@ -59,6 +81,7 @@ CONVERSATION STYLE:
 - Show genuine interest in their expertise
 - Use their name occasionally to maintain personal connection
 - Keep questions clear and specific
+- NO explanations of your interview process
 
 AREAS TO EXPLORE BASED ON DISCOVERY:
 - Decision points and criteria in their ${discoveryData.frequency} process
@@ -71,7 +94,12 @@ AREAS TO EXPLORE BASED ON DISCOVERY:
 - Time management given ${discoveryData.duration} duration
 - Communication and coordination aspects
 
-Remember: You're extracting knowledge for ${discoveryData.goals.join(' and ')}. Focus on actionable, practical insights that others can learn from.`
+Remember: You're extracting knowledge for ${discoveryData.goals.join(' and ')}. Focus on actionable, practical insights that others can learn from.
+
+RESPONSE FORMAT: Only include your actual question or response to the expert. Never include notes, explanations, or commentary about your interview strategy.
+
+${completionContext}`
+
 
     // Call Anthropic API
     const response = await fetch('https://api.anthropic.com/v1/messages', {
@@ -105,7 +133,10 @@ Remember: You're extracting knowledge for ${discoveryData.goals.join(' and ')}. 
     const data = await response.json()
     const content = data.content[0].text
 
-    return NextResponse.json({ content })
+    // Check if Claude indicated the session should end
+    const shouldEnd = shouldComplete || content.toLowerCase().includes('generate') || content.toLowerCase().includes('documentation')
+
+    return NextResponse.json({ content, shouldEnd })
 
   } catch (error) {
     console.error('Chat API error:', error)
